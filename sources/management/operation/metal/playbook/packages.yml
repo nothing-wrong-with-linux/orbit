@@ -1,0 +1,17 @@
+- name: Install basic package set
+  hosts: all
+  become: true
+  vars:
+    categories:
+      - core
+      - monitoring
+      - containerization
+      - virtualization
+      - media
+    root: "{{ lookup('ansible.builtin.env', 'PWD') }}/workspace/ansible/variables/{{ ansible_facts['distribution'] | lower }}"
+  tasks:
+    - name: 'Install packages'
+      ansible.builtin.include_tasks: packages/tasks.yml
+      loop: "{{ categories }}"
+      loop_control:
+        loop_var: category

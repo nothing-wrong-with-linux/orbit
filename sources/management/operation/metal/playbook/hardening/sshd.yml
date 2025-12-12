@@ -1,0 +1,32 @@
+- name: SSH daemon hardening
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Ensure sshd_config.d exists
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Force sshd to listen on IPv4 only
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-address-family-inet.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          AddressFamily inet
+      notify: Reload sshd
+
+    - name: Validate sshd configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+  handlers:
+    - name: Reload sshd
+      ansible.builtin.service:
+        name: "{{ 'ssh' if ansible_facts['os_family'] == 'Debian' else 'sshd' }}"
+        state: reloaded

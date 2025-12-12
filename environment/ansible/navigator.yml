@@ -1,0 +1,31 @@
+ansible-navigator:
+  mode: stdout
+  enable-prompts: true
+
+  logging:
+    level: info
+    file: ./workspace/ansible/navigator/log/run.log
+    append: true
+
+  ansible-runner:
+    artifact-dir: ./workspace/ansible/navigator/artifacts/runner
+    rotate-artifacts-count: 10
+
+  ansible:
+    inventory:
+      entries:
+        - ./environment/fleet/inventory.yml
+
+  playbook-artifact:
+    enable: true
+    save-as: ./workspace/ansible/navigator/artifacts/{playbook_name}-artifact-{time_stamp}.json
+
+  execution-environment:
+    enabled: true
+    image: ansible.management.orbit.mkanes.me
+    container-engine: docker
+    pull:
+      policy: missing
+    environment-variables:
+      set:
+        ANSIBLE_FORCE_COLOR: 'true'

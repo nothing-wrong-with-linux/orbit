@@ -1,0 +1,13 @@
+- screen
+- binutils
+- curl
+- rsync
+- lm-sensors
+- wget
+- tcpdump
+- dnsutils
+- nfs-common
+- tar
+- gzip
+- xz-utils
+

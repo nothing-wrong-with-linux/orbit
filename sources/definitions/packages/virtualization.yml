@@ -1,0 +1,8 @@
+- qemu-kvm
+- qemu-utils
+- qemu-efi
+- libvirt-daemon
+- libvirt-clients
+- virt-top
+- virtinst
+- bridge-utils

@@ -1,0 +1,8 @@
+extra:
+  - perf
+translate:
+  lm-sensors: lm_sensors
+  xz-utils: xz
+  dnsutils: bind-utils
+  linux-tools-generic: kernel-tools
+  nfs-common: nfs-utils

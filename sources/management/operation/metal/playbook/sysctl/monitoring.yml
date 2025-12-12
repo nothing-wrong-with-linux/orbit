@@ -1,0 +1,16 @@
+- name: Monitoring-related sysctl tweaks
+  hosts: all
+  become: true
+  vars:
+    parameters:
+      kernel.task_delayacct: '1'
+  tasks:
+    - ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value | string }}"
+        state: present
+        reload: true
+        sysctl_file: "/etc/sysctl.d/80-monitoring.conf"
+      loop: "{{ parameters | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"

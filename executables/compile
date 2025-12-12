@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+
+require 'yaml'
+require 'fileutils'
+require 'set'
+
+DEFINITIONS = File.expand_path('../sources/definitions/packages', __dir__)
+DESTINATION = File.expand_path('../workspace/ansible/variables', __dir__)
+TARGETS = %w[ubuntu fedora].freeze
+
+def load_yaml(path)
+  YAML.safe_load(File.read(path), permitted_classes: [], permitted_symbols: [], aliases: false)
+rescue Errno::ENOENT
+  nil
+end
+
+def ensure_list(obj, path)
+  return obj if obj.is_a?(Array)
+  raise "#{path} must be a YAML list (Array), got #{obj.class}"
+end
+
+def ensure_hash(obj, path)
+  return {} if obj.nil?
+  return obj if obj.is_a?(Hash)
+  raise "#{path} must be a YAML mapping (Hash), got #{obj.class}"
+end
+
+def apply_overlay(path, base, content)
+  translate = content.fetch('translate', {})
+  extra = content.fetch('extra', [])
+  skip = content.fetch('skip', [])
+
+  ensure_hash(translate, path + '#translate')
+  ensure_list(extra, path + '#extra')
+  ensure_list(skip, path + '#skip')
+
+  out = base.map { |package| translate.fetch(package, package) }
+  out.concat(extra)
+
+  rejected = skip.to_set
+  out = out.reject { |package| rejected.include?(package) }
+
+  out.uniq
+end
+
+FileUtils.mkdir_p(DESTINATION)
+
+base_files = Dir.glob(File.join(DEFINITIONS, '*.yml')).sort
+
+if base_files.empty?
+  warn "No package definition files found in #{DEFINITIONS}"
+  exit 1
+end
+
+base_files.each do |path|
+  base = ensure_list(load_yaml(path), path)
+  yml_name = File.basename(path)
+
+  TARGETS.each do |os|
+    overlay_path = File.join(DEFINITIONS, 'overlay', os, yml_name)
+    overlay = ensure_hash(load_yaml(overlay_path), overlay_path)
+
+    compiled = apply_overlay(overlay_path, base, overlay)
+    destination = File.join(DESTINATION, os, yml_name)
+
+    FileUtils.mkdir_p(File.dirname(destination))
+    File.write(destination, { 'packages' => compiled }.to_yaml)
+    puts "Wrote #{compiled.size} packages to #{destination}"
+  end
+end

@@ -1,0 +1,3 @@
+- import_playbook: sysctl/network.yml
+- import_playbook: sysctl/monitoring.yml
+- import_playbook: sysctl/perf.yml

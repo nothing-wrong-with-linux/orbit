@@ -1,0 +1,17 @@
+- name: Network sysctl defaults
+  hosts: all
+  become: true
+  vars:
+    parameters:
+      net.ipv6.conf.default.use_tempaddr: '2'
+      net.ipv6.conf.all.use_tempaddr: '2'
+  tasks:
+    - ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value | string }}"
+        state: present
+        reload: true
+        sysctl_file: "/etc/sysctl.d/90-network.conf"
+      loop: "{{ parameters | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"
