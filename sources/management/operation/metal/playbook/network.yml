@@ -79,6 +79,7 @@
                 dhcp4: true
                 dhcp6: true
                 accept-ra: true
+                wakeonlan: true
       loop: "{{ (network.interfaces | default({})) | dict2items }}"
       loop_control:
         label: "Persisting name {{ item.value.name }} for interface {{ item.key }}"
