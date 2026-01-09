@@ -12,11 +12,10 @@
         group: root
         mode: '0755'
 
-    - name: Print inventory interfaces
+    - name: Print host network configuration
       ansible.builtin.debug:
         msg:
-          - "network={{ network | default('undefined') }}"
-          - "network.interfaces={{ (network.interfaces | default('undefined')) }}"
+          - "network = {{ network | default('undefined') }}"
 
     - name: Build list of desired interface names from inventory
       ansible.builtin.set_fact:

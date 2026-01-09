@@ -1,2 +1,7 @@
 translate:
   virtinst: virt-install
+  libvirt-clients: libvirt-client
+  qemu-utils: qemu-tools
+  qemu-efi: edk2-ovmf
+extra:
+  - libvirt-client-qemu

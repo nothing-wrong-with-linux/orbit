@@ -10,4 +10,6 @@
 - tar
 - gzip
 - xz-utils
-
+- stress
+- s-tui
+- nano
