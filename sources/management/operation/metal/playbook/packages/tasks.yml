@@ -1,8 +1,4 @@
-- name: 'Load {{ category }} packages'
-  ansible.builtin.include_vars:
-    file: '{{ root }}/{{ category }}.yml'
-
 - name: 'Install {{ category }} packages'
   ansible.builtin.package:
-    name: "{{ packages }}"
+    name: "{{ packages[category] }}"
     state: present

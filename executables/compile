@@ -7,43 +7,46 @@ require 'pathname'
 require 'fileutils'
 
 ROOT = Pathname.new(__dir__).parent.freeze
-DEFINITIONS = ROOT.join('sources', 'definitions')
-# @type [Pathname]
-# noinspection RubyNilAnalysis
-PACKAGES = DEFINITIONS.join('packages')
-# @type [Pathname]
-SECRETS = File.join(DEFINITIONS, 'secrets')
-# @type [Pathname]
-DESTINATION = ROOT.join('workspace', 'ansible', 'variables')
-TARGETS = %w[ubuntu fedora].freeze
+DEFINITIONS = ROOT.join('sources', 'definitions').freeze
+HOST_MAPPING = { 'metal' => 'low', 'virtual' => 'medium' }.freeze
+DESTINATION = ROOT.join('workspace', 'ansible', 'variables').freeze
+INVENTORY = ROOT.join('environment', 'fleet', 'inventory.yml').freeze
 
-def load_yaml(path)
-  YAML.safe_load(File.read(path), permitted_classes: [], permitted_symbols: [], aliases: false)
-rescue Errno::ENOENT
-  nil
+def load
+  state = {}
+
+  Dir.glob(File.join(DEFINITIONS, '**', '*.yml')).each do |path|
+    relative = Pathname.new(path).relative_path_from(DEFINITIONS)
+    parent = state
+    locator = []
+    segments = relative.to_s.split('/')
+    filename = segments.pop
+    key = File.basename(filename, '.yml')
+    segments.each do |part|
+      locator.push(part)
+      parent[part] ||= {}
+      parent = parent[part]
+      unless parent.is_a?(Hash)
+        raise "Conflicting node at #{locator.join('/')} is #{parent.class} and not a hash: #{parent}"
+      end
+    end
+
+    parent[File.basename(key)] = YAML.safe_load(File.read(path), permitted_classes: [], permitted_symbols: [], aliases: false)
+  end
+
+  state.freeze
 end
 
-def ensure_list(obj, path)
-  return obj if obj.is_a?(Array)
-  raise "#{path} must be a YAML list (Array), got #{obj.class}"
-end
+def merge_packages(core, overlay)
+  translate = overlay.fetch('translate', {})
+  extra = overlay.fetch('extra', [])
+  skip = overlay.fetch('skip', [])
 
-def ensure_hash(obj, path)
-  return {} if obj.nil?
-  return obj if obj.is_a?(Hash)
-  raise "#{path} must be a YAML mapping (Hash), got #{obj.class}"
-end
+  out = core.flat_map do |package|
+    replacement = translate.fetch(package, package)
+    replacement.is_a?(Array) ? replacement : [replacement]
+  end
 
-def apply_overlay(path, base, content)
-  translate = content.fetch('translate', {})
-  extra = content.fetch('extra', [])
-  skip = content.fetch('skip', [])
-
-  ensure_hash(translate, path + '#translate')
-  ensure_list(extra, path + '#extra')
-  ensure_list(skip, path + '#skip')
-
-  out = base.map { |package| translate.fetch(package, package) }
   out.concat(extra)
 
   rejected = skip.to_set
@@ -52,45 +55,94 @@ def apply_overlay(path, base, content)
   out.uniq
 end
 
-FileUtils.mkdir_p(DESTINATION)
+def to_variables(definition, state)
+  host = definition['id']
+  kind = definition['kind']
+  orbit = HOST_MAPPING[kind]
+  domain = "#{orbit}.orbit.mkanes.me"
 
-base_files = Dir.glob(File.join(PACKAGES, '*.yml')).sort
+  sandbox = Marshal.load(Marshal.dump(state))
 
-if base_files.empty?
-  warn "No package definition files found in #{PACKAGES}"
-  exit 1
-end
+  current = sandbox['hosts'][kind][host]
+  current['orbit'] = orbit
+  current['domain'] = domain
+  current['name'] = "#{host}.#{domain}"
 
-base_files.each do |path|
-  base = ensure_list(load_yaml(path), path)
-  yml_name = File.basename(path)
-
-  TARGETS.each do |os|
-    overlay_path = File.join(PACKAGES, 'overlay', os, yml_name)
-    overlay = ensure_hash(load_yaml(overlay_path), overlay_path)
-
-    compiled = apply_overlay(overlay_path, base, overlay)
-    relative_destination = Pathname.new('targeted').join('distribution', os, yml_name)
-    # noinspection RubyNilAnalysis
-    destination = DESTINATION.join(relative_destination)
-
-    # noinspection RubyNilAnalysis
-    FileUtils.mkdir_p(destination.parent)
-    File.write(destination, { 'packages' => compiled }.to_yaml)
-    puts "Wrote #{compiled.size} packages to #{relative_destination}"
+  sandbox['host'] = current
+  sandbox['secrets'].each do |key, tree|
+    sandbox[key] = tree
   end
+
+  sandbox.delete('hosts')
+  sandbox.delete('secrets')
+
+  distribution = sandbox['host']['os']['distribution']
+  overlay = sandbox['packages'].fetch('overlay', {}).fetch(distribution, {})
+  sandbox['packages'].delete('overlay')
+  packages = sandbox['packages'].map do |key, list|
+    [key, merge_packages(list, overlay.fetch(key, {}))]
+  end
+
+  sandbox['packages'] = Hash[packages]
+
+  sandbox
 end
 
-Dir.glob(File.join(SECRETS.to_s, '**', '*.yml')).sort.each do |path|
-  relative_path = Pathname.new(path).relative_path_from(SECRETS)
-  # noinspection RubyNilAnalysis
-  relative_destination = Pathname.new('universal')
-    .join('secrets')
-    .join(relative_path)
-  # noinspection RubyNilAnalysis
-  destination = DESTINATION.join(relative_destination)
-  # noinspection RubyNilAnalysis
-  FileUtils.mkdir_p(destination.parent)
-  FileUtils.cp(path, destination)
-  puts "Copied secret #{relative_path} to #{relative_destination}"
+def to_inventory(state)
+  inventory = {
+    'all' => {
+      'vars' => {
+        'ansible_user' => 'relay'
+      },
+      'hosts' => {}
+    }
+  }
+
+  HOST_MAPPING.keys.map do |kind|
+    pairs = state['hosts'].fetch(kind, {}).map do |host, definition|
+      definition['kind'] = kind
+      definition['id'] = host
+      variables = to_variables(definition, state)
+      host = variables['host']['name']
+      [host, variables]
+    end
+
+    hosts = Hash[pairs]
+
+    inventory['all']['hosts'] = inventory['all']['hosts'].merge(hosts)
+
+    hosts.each do |host, variables|
+      definition = variables['host']
+      platform = definition.fetch('platform', {})
+      os = definition.fetch('os', {})
+      groups = []
+      architecture = platform.fetch('architecture', nil)
+      vendor = platform.fetch('vendor', nil)
+      distribution = os.fetch('distribution', nil)
+      distribution_flavor = os.fetch('flavor', nil)
+      groups.push(architecture) if architecture
+      groups.push("#{architecture}.#{vendor}") if architecture and vendor
+      groups.push(distribution) if distribution
+      groups.push("#{distribution}.#{distribution_flavor}") if distribution and distribution_flavor
+
+      groups.each do |key|
+        inventory[key] ||= {}
+        inventory[key]['hosts'] ||= {}
+        inventory[key]['hosts'][host] = {}
+      end
+    end
+  end
+
+  inventory
 end
+
+STATE = load
+# noinspection RubyNilAnalysis
+FileUtils.mkdir_p(INVENTORY.parent)
+File.write(INVENTORY, YAML.safe_dump(to_inventory(STATE)))
+summary = STATE['hosts']
+  .map { |kind, hosts| "#{hosts.size} #{kind}" }
+  .join(', ')
+puts "Written #{summary} hosts to #{INVENTORY}"
+
+

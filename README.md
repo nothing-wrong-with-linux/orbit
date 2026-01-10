@@ -11,13 +11,21 @@ $ virtualenv environment/python
 $ . environment/python/bin/activate
 $ pip install -r environment/python/dependencies.list
 $ ansible-builder build -f environment/ansible/execution.yml -c workspace/ansible/environment --container-runtime docker --tag ansible.management.orbit.mkanes.me
+
 # Enter vault password, finish with double Ctrl + D _without a new line_
 $ cat > sources/definitions/secrets/vault.key
 $ ansible-vault decrypt sources/definitions/hosts/metal.yml.encrypted --vault-id default@sources/definitions/secrets/vault.key --output sources/definitions/hosts/metal.yml
+
+# (Copy and fill templates in sources/definitions/secrets/users/*.template.)
+
+# Build the environment/ansible/inventory.yml file
 $ executables/compile
 ```
 
-- Copy and fill templates in sources/definitions/secrets/users/*.template.
+This will create an inventory with all variables denormalized and promoted to 
+the host level. Ansible is doing a very good job at being ansible, and it is
+way lesser pain to perform all the conditional work in a script rather than
+doing all the playbook gymnastics.
 
 ## Converging
 
@@ -63,7 +71,7 @@ ansible-navigator run sources/management/metal/playbook/hardening.yml -b -k -K [
 
 ### Networking
 
-The second part is assigning stable network interface names on the hosts so that
+The next part is assigning stable network interface names on the hosts so that
 hardware changes would not affect the configuration and potential name bindings.
 
 ```

@@ -8,7 +8,6 @@
       - containerization
       - virtualization
       - media
-    root: "{{ lookup('ansible.builtin.env', 'PWD') }}/workspace/ansible/variables/targeted/distribution/{{ ansible_facts['distribution'] | lower }}"
   tasks:
     - name: 'Install packages'
       ansible.builtin.include_tasks: packages/tasks.yml
