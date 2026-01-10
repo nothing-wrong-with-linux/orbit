@@ -1,45 +1,32 @@
-- name: Maintenance access configuration
+- name: Machine access configuration
   hosts: all
   become: true
-  vars:
-    root: "{{ lookup('ansible.builtin.env', 'PWD') }}/workspace/ansible/variables"
 
   tasks:
-    - name: Load relay user
-      ansible.builtin.include_vars:
-        file: '{{ root }}/universal/secrets/users/relay.yml'
-        name: relay
-    - name: Load airlock user
-      ansible.builtin.include_vars:
-        file: '{{ root }}/universal/secrets/users/airlock.yml'
-        name: airlock
-
+    - name: Define sudo group
+      ansible.builtin.set_fact:
+        sudo_group: "{{ 'sudo' if ansible_facts['os_family'] == 'Debian' else 'wheel' }}"
     - name: Physical access isolation group
       ansible.builtin.group:
         name: isolated
-#    - name: Sudo group
-#      ansible.builtin.group:
-#        name: sudo
-    - name: Physical access account
+    - name: Set up user accounts
       ansible.builtin.user:
-        name: airlock
-        password: "{{ airlock['password'] }}"
-        groups:
-          - "{{ 'sudo' if ansible_facts['os_family'] == 'Debian' else 'wheel' }}"
-          - isolated
-    - name: Remote access account
-      ansible.builtin.user:
-        name: relay
-        password: "{{ relay['password'] }}"
-        groups:
-          - "{{ 'sudo' if ansible_facts['os_family'] == 'Debian' else 'wheel' }}"
+        name: "{{ item.value.id if (item.value.id is defined) else item.key }}"
+        password: "{{ item.value.password }}"
+        groups: "{{ ([sudo_group] if item.value.get('sudo', false) else []) + (item.value.groups | default([])) }}"
+      loop: "{{ users | dict2items }}"
+      loop_control:
+        label: "Setting up {{ item.key }} user account"
 
     - name: Remote access SSH keys
       ansible.posix.authorized_key:
-        user: relay
+        user: "{{ item.value.id if (item.value.id is defined) else item.key }}"
         state: present
-        key: "{{ relay['keys'] | join('\n') }}"
+        key: "{{ item.value.get('keys', []) | join('\n') }}"
         exclusive: true
+      loop: "{{ users | dict2items }}"
+      loop_control:
+        label: "Setting keys for {{ item.value.id if (item.value.id is defined) else item.key }}"
 
     - name: Ensure sshd_config.d exists
       ansible.builtin.file:
