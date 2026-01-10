@@ -1,0 +1,33 @@
+#- name: Assign ethX interface names
+#  hosts: all
+#  become: true
+#  when: host.os.distribution == 'ubuntu'
+#  tasks:
+- name: Ensure systemd-networkd config directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/network
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create systemd.link files
+  ansible.builtin.copy:
+    dest: "/etc/systemd/network/10-eth{{ index }}.link"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Match]
+      MACAddress={{ item.eui }}
+      
+      [Link]
+      Name=eth{{ index }}
+  loop: "{{ host.interfaces.ethernet }}"
+  when: host.interfaces is defined and host.interfaces.ethernet is defined
+  loop_control:
+    label: "Persisting name eth{{ index }} for interface {{ item.eui }}"
+    index_var: index
+  notify:
+    - Reload udev
+    - Trigger udev evaluation

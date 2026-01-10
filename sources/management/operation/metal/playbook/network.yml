@@ -1,90 +1,30 @@
+#- import_playbook: network/netplan.yml
 - name: Assign ethX interface names
   hosts: all
   become: true
-  gather_facts: true
 
   tasks:
-    - name: Ensure systemd-networkd config directory exists
-      ansible.builtin.file:
-        path: /etc/systemd/network
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
+    - name: Include networkd tasks
+      ansible.builtin.include_tasks:
+        file: network/networkd.yml
+      when: host.os.distribution == 'fedora'
 
-    - name: Print host network configuration
-      ansible.builtin.debug:
-        msg:
-          - "network = {{ network | default('undefined') }}"
+    - name: Include netplan tasks
+      ansible.builtin.include_tasks:
+        file: network/netplan.yml
+      when: host.os.distribution == 'ubuntu'
 
-    - name: Build list of desired interface names from inventory
-      ansible.builtin.set_fact:
-        names: >-
-          {{
-            (network.interfaces | default({}))
-            | dict2items
-            | map(attribute='value')
-            | map(attribute='name')
-            | list
-          }}
+  handlers:
+    - name: Reload udev
+      ansible.builtin.command:
+        argv: [udevadm, control, --reload]
+    - name: Trigger udev evaluation
+      ansible.builtin.command:
+        argv: [udevadm, trigger, -c, add, -s, net]
 
-    - name: Ensure desired interface names are unique
-      ansible.builtin.assert:
-        that:
-          - names | length == (names | unique | length)
-        fail_msg: >-
-          Duplicate interface names in inventory mapping.
-          Names: {{ names }}
-          Unique: {{ names | unique }}
-          Full mapping: {{ network.interfaces | default({}) }}
-
-    - name: Build list of host MAC addresses from facts
-      ansible.builtin.set_fact:
-        interfaces: >-
-          {{
-            ansible_facts.interfaces
-            | reject('equalto', 'lo')
-            | map('extract', ansible_facts)
-            | map(attribute='macaddress')
-            | map('default', '')
-            | map('lower')
-            | reject('equalto', '')
-            | list
-          }}
-
-    - name: Ensure inventory MACs exist
-      ansible.builtin.assert:
-        that:
-          - (item.key | lower) in interfaces
-        fail_msg: "Inventory MAC {{ item.key }} not found on this host. Host MACs: {{ interfaces }}"
-      loop: "{{ (network.interfaces | default({})) | dict2items }}"
-      loop_control:
-        label: "{{ item.key }} ({{ item.value.name }})"
-
-    - name: Create netplan files (MAC -> stable name)
-      ansible.builtin.copy:
-        dest: "/etc/netplan/10-{{ item.value.name }}.yaml"
-        owner: root
-        group: root
-        mode: '0644'
-        content: |
-          network:
-            version: 2
-            ethernets:
-              default:
-                match:
-                  macaddress: '{{ item.key }}'
-                set-name: '{{ item.value.name }}'
-                dhcp4: true
-                dhcp6: true
-                accept-ra: true
-                wakeonlan: true
-      loop: "{{ (network.interfaces | default({})) | dict2items }}"
-      loop_control:
-        label: "Persisting name {{ item.value.name }} for interface {{ item.key }}"
-
-    - name: Validate netplan configuration
-      ansible.builtin.command: netplan try --timeout 10
-      async: 30
-      poll: 0
-      changed_when: true
+- name: Verify network status
+  hosts: all
+  tasks:
+    - name: Check network connectivity
+      ansible.builtin.wait_for_connection:
+        timeout: 300

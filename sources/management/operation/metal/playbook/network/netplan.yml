@@ -1,0 +1,29 @@
+- name: Create netplan files
+  ansible.builtin.copy:
+    dest: "/etc/netplan/10-eth{{ index }}.yaml"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      network:
+        version: 2
+        ethernets:
+          default:
+            match:
+              macaddress: '{{ item.eui }}'
+            set-name: 'eth{{ index }}'
+            dhcp4: true
+            dhcp6: true
+            accept-ra: true
+            wakeonlan: true
+  loop: "{{ host.interfaces.ethernet }}"
+  loop_control:
+    label: "Persisting name {{ item.value.name }} for interface {{ item.key }}"
+    index_var: index
+  when: host.interfaces is defined and host.interfaces.ethernet is defined
+
+- name: Validate netplan configuration
+  ansible.builtin.command: netplan try --timeout 10
+  async: 30
+  poll: 0
+  changed_when: true
