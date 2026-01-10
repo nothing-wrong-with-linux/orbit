@@ -11,8 +11,13 @@ $ virtualenv environment/python
 $ . environment/python/bin/activate
 $ pip install -r environment/python/dependencies.list
 $ ansible-builder build -f environment/ansible/execution.yml -c workspace/ansible/environment --container-runtime docker --tag ansible.management.orbit.mkanes.me
+# Enter vault password, finish with double Ctrl + D _without a new line_
+$ cat > sources/definitions/secrets/vault.key
+$ ansible-vault decrypt sources/definitions/hosts/metal.yml.encrypted --vault-id default@sources/definitions/secrets/vault.key --output sources/definitions/hosts/metal.yml
 $ executables/compile
 ```
+
+- Copy and fill templates in sources/definitions/secrets/users/*.template.
 
 ## Converging
 

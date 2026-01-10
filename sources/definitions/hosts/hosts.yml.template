@@ -1,0 +1,14 @@
+voyager:
+  name: voyager
+  platform:
+    architecture: x86_64
+    vendor: intel
+  os:
+    distribution: fedora
+    flavor: server
+  interfaces:
+    ethernet:
+      - eui: '00:11:22:33:44:55'
+        addresses:
+          - kind: v4
+            value: '192.168.99.99'
