@@ -19,3 +19,7 @@
     (arch):
   vars:
     distribution: (os)
+
+all:
+  vars:
+    ansible_user: relay

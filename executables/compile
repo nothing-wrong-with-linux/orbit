@@ -3,9 +3,18 @@
 require 'yaml'
 require 'fileutils'
 require 'set'
+require 'pathname'
+require 'fileutils'
 
-DEFINITIONS = File.expand_path('../sources/definitions/packages', __dir__)
-DESTINATION = File.expand_path('../workspace/ansible/variables', __dir__)
+ROOT = Pathname.new(__dir__).parent.freeze
+DEFINITIONS = ROOT.join('sources', 'definitions')
+# @type [Pathname]
+# noinspection RubyNilAnalysis
+PACKAGES = DEFINITIONS.join('packages')
+# @type [Pathname]
+SECRETS = File.join(DEFINITIONS, 'secrets')
+# @type [Pathname]
+DESTINATION = ROOT.join('workspace', 'ansible', 'variables')
 TARGETS = %w[ubuntu fedora].freeze
 
 def load_yaml(path)
@@ -45,10 +54,10 @@ end
 
 FileUtils.mkdir_p(DESTINATION)
 
-base_files = Dir.glob(File.join(DEFINITIONS, '*.yml')).sort
+base_files = Dir.glob(File.join(PACKAGES, '*.yml')).sort
 
 if base_files.empty?
-  warn "No package definition files found in #{DEFINITIONS}"
+  warn "No package definition files found in #{PACKAGES}"
   exit 1
 end
 
@@ -57,14 +66,31 @@ base_files.each do |path|
   yml_name = File.basename(path)
 
   TARGETS.each do |os|
-    overlay_path = File.join(DEFINITIONS, 'overlay', os, yml_name)
+    overlay_path = File.join(PACKAGES, 'overlay', os, yml_name)
     overlay = ensure_hash(load_yaml(overlay_path), overlay_path)
 
     compiled = apply_overlay(overlay_path, base, overlay)
-    destination = File.join(DESTINATION, os, yml_name)
+    relative_destination = Pathname.new('targeted').join('distribution', os, yml_name)
+    # noinspection RubyNilAnalysis
+    destination = DESTINATION.join(relative_destination)
 
-    FileUtils.mkdir_p(File.dirname(destination))
+    # noinspection RubyNilAnalysis
+    FileUtils.mkdir_p(destination.parent)
     File.write(destination, { 'packages' => compiled }.to_yaml)
-    puts "Wrote #{compiled.size} packages to #{destination}"
+    puts "Wrote #{compiled.size} packages to #{relative_destination}"
   end
+end
+
+Dir.glob(File.join(SECRETS.to_s, '**', '*.yml')).sort.each do |path|
+  relative_path = Pathname.new(path).relative_path_from(SECRETS)
+  # noinspection RubyNilAnalysis
+  relative_destination = Pathname.new('universal')
+    .join('secrets')
+    .join(relative_path)
+  # noinspection RubyNilAnalysis
+  destination = DESTINATION.join(relative_destination)
+  # noinspection RubyNilAnalysis
+  FileUtils.mkdir_p(destination.parent)
+  FileUtils.cp(path, destination)
+  puts "Copied secret #{relative_path} to #{relative_destination}"
 end

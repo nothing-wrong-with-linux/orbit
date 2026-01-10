@@ -19,6 +19,20 @@
         mode: '0644'
         content: |
           AddressFamily inet
+          
+          Match Address 192.168.0.0/16
+            PubkeyAuthentication yes
+      notify: Reload sshd
+
+    - name: Disable authentication by default
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/00-default-access-rules.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          PubkeyAuthentication no
+          PasswordAuthentication no
       notify: Reload sshd
 
     - name: Validate sshd configuration
