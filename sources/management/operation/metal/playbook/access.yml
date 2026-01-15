@@ -1,6 +1,10 @@
 - name: Machine access configuration
   hosts: all
   become: true
+  vars:
+    administration_accounts:
+      - orangepi
+      - root
 
   tasks:
     - name: Define sudo group
@@ -9,48 +13,43 @@
     - name: Physical access isolation group
       ansible.builtin.group:
         name: isolated
+      # There was a fun reaction from one of the machines not creating personal
+      # group by default, injecting gid 1000 instead (which pointed to isolated
+      # group)
+    - name: Per-account groups
+      ansible.builtin.group:
+        name: "{{ item.value.id if (item.value.id is defined) else item.key }}"
+      loop: "{{ users | dict2items }}"
+      loop_control:
+        label: "Setting up {{ item.key }} personal user group"
     - name: Set up user accounts
       ansible.builtin.user:
         name: "{{ item.value.id if (item.value.id is defined) else item.key }}"
         password: "{{ item.value.password }}"
+        group: "{{ item.value.id if (item.value.id is defined) else item.key }}"
         groups: "{{ ([sudo_group] if item.value.get('sudo', false) else []) + (item.value.groups | default([])) }}"
       loop: "{{ users | dict2items }}"
       loop_control:
         label: "Setting up {{ item.key }} user account"
-
-    - name: Remote access SSH keys
-      ansible.posix.authorized_key:
-        user: "{{ item.value.id if (item.value.id is defined) else item.key }}"
-        state: present
-        key: "{{ item.value.get('keys', []) | join('\n') }}"
-        exclusive: true
-      loop: "{{ users | dict2items }}"
+    - name: Get user info from passwd
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ item }}"
+        fail_key: false # Prevents the task from failing if the user is missing
+      loop: "{{ administration_accounts }}"
+    - name: Filtering existing administration accounts
+      ansible.builtin.set_fact:
+        isolated_accounts: "{{ isolated_accounts | default([]) + [item] }}"
+      loop: "{{ administration_accounts }}"
+      when: ansible_facts.getent_passwd[item] is defined
+    - name: Adding other administration accounts to the isolated group
+      ansible.builtin.user:
+        name: "{{ item }}"
+        groups: isolated
+        append: true
+      loop: "{{ isolated_accounts }}"
       loop_control:
-        label: "Setting keys for {{ item.value.id if (item.value.id is defined) else item.key }}"
-
-    - name: Ensure sshd_config.d exists
-      ansible.builtin.file:
-        path: /etc/ssh/sshd_config.d
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-    - name: Forbid physical account SSH access
-      ansible.builtin.copy:
-        dest: /etc/ssh/sshd_config.d/99-maintenance-access-rules.conf
-        owner: root
-        group: root
-        mode: '0644'
-        content: |
-          DenyGroups isolated
-          
-          Match User relay
-            AuthenticationMethods publickey,password
-      notify: Reload sshd
-
-    - name: Validate sshd configuration
-      ansible.builtin.command: sshd -t
-      changed_when: false
+        label: "Adding {{ item }} to the isolated group"
 
   handlers:
     - name: Reload sshd

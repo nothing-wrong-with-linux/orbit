@@ -11,20 +11,7 @@
         group: root
         mode: '0755'
 
-    - name: Force sshd to listen on IPv4 only
-      ansible.builtin.copy:
-        dest: /etc/ssh/sshd_config.d/10-address-family-inet.conf
-        owner: root
-        group: root
-        mode: '0644'
-        content: |
-          AddressFamily inet
-          
-          Match Address 192.168.0.0/16
-            PubkeyAuthentication yes
-      notify: Reload sshd
-
-    - name: Disable authentication by default
+    - name: Allow authentication only in local networks
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/00-default-access-rules.conf
         owner: root
@@ -33,11 +20,62 @@
         content: |
           PubkeyAuthentication no
           PasswordAuthentication no
+          
+          Match Address 10.0.0.0/8
+            PubkeyAuthentication yes
+          
+          Match Address 192.168.0.0/16
+            PubkeyAuthentication yes
+      notify: Reload sshd
+
+    - name: Force sshd to listen on IPv4 only
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-address-family-inet.conf
+        owner: root
+        group: root
+        mode: '0644'
+        # Not adding 172.16.0.0/12 because I don't want weird stories with
+        # containers taking over the host via ssh
+        content: |
+          AddressFamily inet
+      notify: Reload sshd
+
+    - name: Forbid root login
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-root-access-rules.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          PermitRootLogin no
+      notify: Reload sshd
+
+    - name: Forbid physical account SSH access
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-maintenance-access-rules.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          DenyGroups isolated
+          
+          Match User relay
+            AuthenticationMethods publickey,password
       notify: Reload sshd
 
     - name: Validate sshd configuration
       ansible.builtin.command: sshd -t
       changed_when: false
+
+    - name: Remote access SSH keys
+      ansible.posix.authorized_key:
+        user: "{{ item.value.id if (item.value.id is defined) else item.key }}"
+        state: present
+        key: "{{ item.value.get('keys', []) | join('\n') }}"
+        exclusive: true
+      loop: "{{ users | dict2items }}"
+      loop_control:
+        label: "Setting keys for {{ item.value.id if (item.value.id is defined) else item.key }}"
 
   handlers:
     - name: Reload sshd

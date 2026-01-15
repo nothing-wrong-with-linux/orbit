@@ -29,3 +29,5 @@ ansible-navigator:
     environment-variables:
       set:
         ANSIBLE_FORCE_COLOR: 'true'
+        ANSIBLE_BECOME_TIMEOUT: '60'
+        ANSIBLE_TIMEOUT: '60'
