@@ -1,4 +1,4 @@
-#- import_playbook: network/netplan.yml
+- import_playbook: sysctl/network.yml
 - name: Assign ethX interface names
   hosts: all
   become: true
